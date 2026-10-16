@@ -1,0 +1,8 @@
+target/
+*.iml
+.idea/
+.vscode/
+.vortex/
+it/sample/target/
+__pycache__/
+*.pyc

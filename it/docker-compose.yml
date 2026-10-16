@@ -1,0 +1,31 @@
+# Two throwaway servers for the end-to-end test (it/run_it.py):
+#  - sq-community: SonarQube Community Build 26.10 without branch support
+#  - sq-branch:    SonarQube Community Build 26.5 with mc1arke/sonarqube-community-branch-plugin 26.5.0
+#                  (the newest SonarQube release that plugin supports)
+# Both load the Community Vortex plugin built by `./mvnw package`.
+name: vortex-it
+
+x-common: &common
+  environment:
+    SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    SONAR_TELEMETRY_ENABLE: "false"
+  networks: [it]
+
+services:
+  sq-community:
+    <<: *common
+    image: sonarqube:26.10.0.133078-community
+    ports: ["127.0.0.1:9001:9000"]
+    volumes:
+      - ../vortex-plugin/target/vortex-plugin.jar:/opt/sonarqube/extensions/plugins/vortex-plugin.jar:ro
+
+  sq-branch:
+    <<: *common
+    image: mc1arke/sonarqube-with-community-branch-plugin:26.5.0.122743-community
+    ports: ["127.0.0.1:9002:9000"]
+    volumes:
+      # mount the single jar so the image's branch plugin stays in place
+      - ../vortex-plugin/target/vortex-plugin.jar:/opt/sonarqube/extensions/plugins/vortex-plugin.jar:ro
+
+networks:
+  it: {}

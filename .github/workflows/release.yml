@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag like v0.1.0 to publish a GitHub Release. The build, unit tests and the end-to-end
+# tests against real SonarQube servers must pass first. "Run workflow" with dry-run builds the
+# release assets as a workflow artifact without publishing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, e.g. 0.1.0 (dry run only)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "push" ]; then version="${REF_NAME#v}"; else version="$INPUT_VERSION"; fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::'$version' is not a semantic version (expected tag v1.2.3 or v1.2.3-rc.1)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Build and test ${{ needs.prepare.outputs.version }}
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    name: Publish
+    needs: [prepare, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the release
+      id-token: write      # build provenance
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: jars
+          path: build
+      - name: Assemble release assets
+        run: |
+          mkdir dist
+          cp build/vortex-plugin/target/vortex-plugin.jar "dist/community-vortex-plugin-$VERSION.jar"
+          cp build/vortex-mcp/target/vortex-mcp-all.jar "dist/community-vortex-mcp-$VERSION.jar"
+          {
+            echo "== Server plugin (bundled libraries)"
+            cat build/vortex-plugin/target/generated-sources/license/THIRD-PARTY.txt
+            echo
+            echo "== MCP server (bundled libraries)"
+            cat build/vortex-mcp/target/generated-sources/license/THIRD-PARTY.txt
+          } > dist/THIRD-PARTY.txt
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.jar
+      - name: Create GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease";; esac
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "Community Vortex $VERSION" \
+            --generate-notes --verify-tag $prerelease
+      - name: Keep assets (dry run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ env.VERSION }}
+          path: dist/
+          retention-days: 7

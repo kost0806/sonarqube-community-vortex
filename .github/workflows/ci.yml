@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to build (release workflow); empty keeps the POM version
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Set release version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: ./mvnw -B -ntp versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+      - name: Build, test and check coverage
+        run: ./mvnw -B -ntp verify
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jars
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            vortex-plugin/target/vortex-plugin.jar
+            vortex-mcp/target/vortex-mcp-all.jar
+            vortex-mcp/target/generated-sources/license/THIRD-PARTY.txt
+            vortex-plugin/target/generated-sources/license/THIRD-PARTY.txt
+
+  end-to-end:
+    name: End-to-end (SonarQube 26.10, 26.5 + branch plugin)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: jars
+      - name: Elasticsearch kernel setting for SonarQube
+        run: sudo sysctl -w vm.max_map_count=524288
+      - name: Start SonarQube servers
+        run: docker compose -f it/docker-compose.yml up -d
+      - name: Run end-to-end checks
+        run: python -I it/run_it.py
+      - name: Server logs on failure
+        if: failure()
+        run: docker compose -f it/docker-compose.yml logs --tail=200
+      - name: Stop servers
+        if: always()
+        run: docker compose -f it/docker-compose.yml down -v

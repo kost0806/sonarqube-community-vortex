@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.communityvortex</groupId>
+  <artifactId>community-vortex-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>Community Vortex</name>
+  <description>
+    Unofficial, clean-room agent guidance and verification for SonarQube Community Build.
+    Not affiliated with or endorsed by SonarSource.
+  </description>
+
+  <licenses>
+    <license>
+      <name>GNU LGPL 3</name>
+      <url>https://www.gnu.org/licenses/lgpl-3.0.txt</url>
+    </license>
+  </licenses>
+
+  <modules>
+    <module>vortex-policy</module>
+    <module>vortex-plugin</module>
+    <module>vortex-mcp</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+
+    <!--
+      The server plugin compiles against the oldest supported API so one jar runs on 26.5 .. 26.10:
+      SonarQube 26.5 ships plugin API 13.5.0.4319 (the newest release supported by
+      mc1arke/sonarqube-community-branch-plugin), 26.10 ships 14.1.0.5543.
+    -->
+    <sonar.pluginApi.version>13.5.0.4319</sonar.pluginApi.version>
+    <sonarlint.version>12.1.1.87771</sonarlint.version>
+    <mcp.version>2.1.0</mcp.version>
+    <javaparser.version>3.28.2</javaparser.version>
+    <gson.version>2.14.0</gson.version>
+    <slf4j.version>2.0.20</slf4j.version>
+
+    <junit.version>6.1.3</junit.version>
+    <assertj.version>3.27.7</assertj.version>
+    <mockito.version>5.24.0</mockito.version>
+
+    <jacoco.minCoverage>0.80</jacoco.minCoverage>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.communityvortex</groupId>
+        <artifactId>vortex-policy</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.sonarsource.sonarlint.core</groupId>
+        <artifactId>sonarlint-analysis-engine</artifactId>
+        <version>${sonarlint.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>${mcp.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.github.javaparser</groupId>
+        <artifactId>javaparser-symbol-solver-core</artifactId>
+        <version>${javaparser.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.code.gson</groupId>
+        <artifactId>gson</artifactId>
+        <version>${gson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-simple</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>${junit.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.assertj</groupId>
+        <artifactId>assertj-core</artifactId>
+        <version>${assertj.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-core</artifactId>
+        <version>${mockito.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.16.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.6.0</version>
+          <configuration>
+            <!-- Mockito inline mock maker needs the agent on JDK 21+ -->
+            <argLine>@{argLine} -XX:+EnableDynamicAgentLoading</argLine>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>3.5.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>3.6.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>3.11.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.sonarsource.sonar-packaging-maven-plugin</groupId>
+          <artifactId>sonar-packaging-maven-plugin</artifactId>
+          <version>2.0.0.3035</version>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>versions-maven-plugin</artifactId>
+          <version>2.23.0</version>
+        </plugin>
+        <plugin>
+          <!-- lists the licenses of everything bundled into the distributed jars -->
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>2.7.1</version>
+          <executions>
+            <execution>
+              <id>third-party</id>
+              <phase>generate-resources</phase>
+              <goals>
+                <goal>add-third-party</goal>
+              </goals>
+              <configuration>
+                <excludedScopes>test,provided,system</excludedScopes>
+                <thirdPartyFilename>THIRD-PARTY.txt</thirdPartyFilename>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.15</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>${jacoco.minCoverage}</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,12 @@
+{
+  "project": "my_project",
+  "policy": {
+    "architectureRules": [
+      {"line": 1, "from": "com.acme.domain.**", "to": "com.acme.infra.**", "text": "deny com.acme.domain.** -> com.acme.infra.**"}
+    ],
+    "architectureRuleErrors": [],
+    "deniedDependencies": ["maven:log4j:log4j"],
+    "allowedDependencies": [],
+    "guidelines": "Prefer constructor injection."
+  }
+}

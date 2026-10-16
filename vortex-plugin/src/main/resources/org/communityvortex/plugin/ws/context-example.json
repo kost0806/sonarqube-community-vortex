@@ -1,0 +1,26 @@
+{
+  "project": {"key": "my_project", "name": "My Project"},
+  "scope": {"branch": null, "pullRequest": null, "mainBranch": true},
+  "branches": [{"name": "main", "isMain": true, "type": "BRANCH"}],
+  "pullRequests": [],
+  "qualityProfiles": [
+    {"key": "AXa1", "name": "Sonar way", "language": "java", "languageName": "Java", "activeRuleCount": 512}
+  ],
+  "qualityGate": {
+    "name": "Sonar way",
+    "conditions": [{"metric": "new_coverage", "op": "LT", "error": "80"}],
+    "status": "OK"
+  },
+  "size": {"ncloc": 12034, "files": 210, "nclocByLanguage": {"java": 11800, "xml": 234}},
+  "topDirectories": [{"path": "src/main/java/com/acme/order", "ncloc": 3120}],
+  "policy": {
+    "architectureRules": [
+      {"line": 1, "from": "com.acme.domain.**", "to": "com.acme.infra.**", "text": "deny com.acme.domain.** -> com.acme.infra.**"}
+    ],
+    "architectureRuleErrors": [],
+    "deniedDependencies": ["maven:log4j:log4j"],
+    "allowedDependencies": [],
+    "guidelines": "Prefer constructor injection."
+  },
+  "warnings": []
+}

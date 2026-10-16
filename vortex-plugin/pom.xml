@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.communityvortex</groupId>
+    <artifactId>community-vortex-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>vortex-plugin</artifactId>
+  <packaging>sonar-plugin</packaging>
+  <name>Community Vortex :: SonarQube Plugin</name>
+  <description>Serves agent guidance (rules, quality gate, architecture and dependency policies) from SonarQube Community Build.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.sonarsource.api.plugin</groupId>
+      <artifactId>sonar-plugin-api</artifactId>
+      <version>${sonar.pluginApi.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <!-- provided by the SonarQube server classloader -->
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.communityvortex</groupId>
+      <artifactId>vortex-policy</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <!-- stable file name; release assets get the version appended -->
+    <finalName>vortex-plugin</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.sonarsource.sonar-packaging-maven-plugin</groupId>
+        <artifactId>sonar-packaging-maven-plugin</artifactId>
+        <extensions>true</extensions>
+        <configuration>
+          <pluginKey>communityvortex</pluginKey>
+          <pluginName>Community Vortex (unofficial)</pluginName>
+          <pluginClass>org.communityvortex.plugin.VortexPlugin</pluginClass>
+          <pluginDescription>Agent guidance and verification policies for SonarQube Community Build. Not affiliated with SonarSource.</pluginDescription>
+          <skipDependenciesPackaging>false</skipDependenciesPackaging>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
