@@ -26,6 +26,7 @@
     <module>vortex-policy</module>
     <module>vortex-plugin</module>
     <module>vortex-mcp</module>
+    <module>vortex-server</module>
   </modules>
 
   <properties>

@@ -6,8 +6,14 @@ import java.util.List;
 /** Analyses workspace files with the project's server-side rules. */
 public interface Analyzer {
 
-  record Finding(String file, int line, int endLine, String ruleKey, String ruleName, String severity, String type,
-    String message, boolean hasQuickFix) {
+  /** Lines are 1-based; offsets are 0-based columns within the start and end line. */
+  record Finding(String file, int line, int endLine, int startOffset, int endOffset, String ruleKey, String ruleName,
+    String severity, String type, String message, boolean hasQuickFix) {
+
+    public Finding(String file, int line, int endLine, String ruleKey, String ruleName, String severity, String type,
+      String message, boolean hasQuickFix) {
+      this(file, line, endLine, 0, 0, ruleKey, ruleName, severity, type, message, hasQuickFix);
+    }
   }
 
   record Report(List<Finding> findings, List<String> unsupportedFiles, List<String> failedFiles, List<String> warnings) {

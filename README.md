@@ -20,7 +20,7 @@ sources and the LGPL `sonarlint-core` analysis engine.
 | Sonar Vortex capability (public docs) | Community Vortex | Notes |
 |---|---|---|
 | Vortex context: rules, architecture, dependency policies | `api/vortex/context` (server plugin) + `vortex_get_context`, `vortex_get_rules` (MCP) | Policies are project settings you define (see below) |
-| Vortex analysis: verify agent-written files in seconds | `vortex_verify_files` (MCP) | Runs the **server's own analyzers and active rules** locally via `sonarlint-core`, plus architecture and dependency checks |
+| Vortex analysis: verify agent-written files in seconds | `vortex_verify_files` (MCP) **and the official SonarQube CLI** (`sonar analyze`, `sonar analyze agentic`) | Runs the **server's own analyzers and active rules** via `sonarlint-core`, plus architecture and dependency checks; see [SonarQube CLI](#use-the-official-sonarqube-cli) |
 | Semantic code navigation | `vortex_search_symbols`, `vortex_file_outline`, `vortex_find_references`, `vortex_get_dependencies` | Java references are resolved with the JavaParser symbol solver; JS/TS/Python use syntax-level indexing |
 | Taint analysis (injection) | **Not available** | The security engine is commercial; Community analyzers do not ship it |
 | Usage dashboard / metering | Not implemented | |
@@ -50,6 +50,7 @@ Each [release](https://github.com/kost0806/sonarqube-community-vortex/releases) 
 |---|---|
 | `community-vortex-plugin-<version>.jar` | SonarQube server plugin |
 | `community-vortex-mcp-<version>.jar` | MCP server (self-contained, `java -jar`) |
+| `community-vortex-server-<version>.jar` | analysis service for the SonarQube CLI (self-contained, `java -jar`) |
 | `SHA256SUMS`, `THIRD-PARTY.txt` | checksums, licenses of bundled libraries |
 
 Verify a download (and its GitHub build provenance):
@@ -126,6 +127,84 @@ The first verification of a language downloads the server's analyzer (`api/plugi
 jars SonarQube for IDE uses) into the cache; later runs reuse it. Active rules are refreshed every
 5 minutes and policies every minute; a new analyzer version on the server needs an MCP server restart.
 
+## Use the official SonarQube CLI
+
+The [SonarQube CLI](https://github.com/SonarSource/sonarqube-cli) (LGPL-3.0) sends its Vortex analysis
+requests to `POST /api/v2/a3s/analyses` on the server. On Community Build the plugin answers that
+endpoint and forwards it to the **Community Vortex analysis service**, an independent implementation of
+the same request/response format:
+
+```
+sonar analyze ──► SonarQube (authenticates the user) ──► plugin: /api/v2/a3s/* ──► vortex-server
+                                                                                     │ checks the user's access,
+                                                                                     │ fetches rules, analyzers, policies
+                                                         SonarQube Web API ◄─────────┘ with the user's own token
+```
+
+1. Run the analysis service next to SonarQube (Docker image built from `vortex-server/Dockerfile`, or
+   `java -jar community-vortex-server-<version>.jar`, Java 21+):
+
+   | Variable | Default | Meaning |
+   |---|---|---|
+   | `SONAR_HOST_URL` | required | SonarQube as reachable from the service, e.g. `http://sonarqube:9000` |
+   | `VORTEX_PORT` / `VORTEX_BIND` | `9100` / `0.0.0.0` | listen address; keep it on an internal network |
+   | `VORTEX_CACHE_DIR` | `~/.vortex-server` | analyzer cache and temporary request files |
+   | `VORTEX_NODE` | `node` on `PATH` | Node.js for JavaScript/TypeScript (included in the image) |
+   | `VORTEX_MAX_FILES` | `100` | files per request; larger change sets are split by the CLI |
+
+2. Point SonarQube at it and restart: `SONAR_VORTEX_ANALYSIS_URL=http://vortex-server:9100`
+   (environment) or `sonar.vortex.analysis.url` in `sonar.properties`. A reverse proxy in front of
+   SonarQube must allow request bodies of a few MB.
+
+```yaml
+services:
+  sonarqube:
+    image: sonarqube:26.10.0.133078-community
+    environment:
+      SONAR_VORTEX_ANALYSIS_URL: http://vortex-server:9100
+    volumes:
+      - ./community-vortex-plugin-<version>.jar:/opt/sonarqube/extensions/plugins/community-vortex-plugin.jar:ro
+  vortex-server:
+    build: ./vortex-server   # or an image you built from vortex-server/Dockerfile
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+```
+
+3. Use the CLI as usual:
+
+```bash
+sonar auth login --server https://sonarqube.example.com
+sonar analyze --file src/main/java/com/acme/Order.java --project my_project
+sonar analyze --project my_project            # the git change set
+sonar analyze agentic --staged --project my_project
+```
+
+Findings carry the analyzer rule keys (`java:S106`, ...) plus `vortex:architecture` and
+`vortex:dependency` for the project's policies. Exit code 51 means issues were found.
+
+**Claude Code loop.** `sonar integrate claude` only installs its Vortex hooks when the server also
+offers SonarSource's proprietary context engine, which Community Vortex does not emulate. Use the
+provided hook instead, which runs `sonar analyze` after every edit and hands findings back to Claude
+(needs `jq`):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "/path/to/integrations/claude-code/sonar-analyze-hook.sh" }]
+      }
+    ]
+  }
+}
+```
+
+**Not provided:** `sonar context` / Vortex Context (SonarSource's proprietary `sonar-context-augmentation`
+engine; use the MCP tools above for context), `sonar analyze dependency-risks` (SCA, Enterprise),
+`sonar remediate` (SonarQube Cloud). The CAG entitlement endpoint is left unanswered, so the CLI reports
+those features as not available rather than failing later.
+
 ## Build and test
 
 ```bash
@@ -144,9 +223,10 @@ python it/run_it.py
 docker compose -f it/docker-compose.yml down -v
 ```
 
-It starts SonarQube 26.10 (no branch support) and 26.5 with the community branch plugin, analyses
-`it/sample` with the official scanner (main branch and `feature/cart`), checks the web services and
-drives the MCP server over stdio.
+It starts SonarQube 26.10 (no branch support) and 26.5 with the community branch plugin, each with its
+analysis service, analyses `it/sample` with the official scanner (main branch and `feature/cart`),
+checks the web services, drives the MCP server over stdio, and runs the official SonarQube CLI
+(`SONAR_CLI`, or `sonar` on `PATH`) against both servers.
 
 ## Releasing
 
@@ -176,6 +256,10 @@ workflow artifact without publishing.
 * The plugin's web services forward calls in-process, so SonarQube's own permission checks apply;
   unexpected upstream errors are not echoed to clients.
 * MCP stdout carries only the protocol; anything else is redirected to stderr.
+* The analysis service trusts nobody: SonarQube authenticates the caller before the plugin forwards a
+  request, and the service re-checks the caller's access to the project with the caller's own token.
+  Posted file paths are validated (relative, no `..`) and written to a per-request directory that is
+  deleted afterwards; request size and file count are limited.
 
 ## Layout
 
@@ -183,6 +267,8 @@ workflow artifact without publishing.
 vortex-policy/   architecture rule DSL and dependency policy (shared)
 vortex-plugin/   SonarQube server plugin: settings + api/vortex/*
 vortex-mcp/      stdio MCP server: context, local verification, navigation
+vortex-server/   analysis service answering SonarQube CLI analysis requests (+ Dockerfile)
+integrations/    Claude Code hook running the SonarQube CLI after edits
 it/              docker-compose + end-to-end test
 ```
 

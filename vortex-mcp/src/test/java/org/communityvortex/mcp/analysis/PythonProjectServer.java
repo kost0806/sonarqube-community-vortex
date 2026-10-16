@@ -5,14 +5,14 @@ import java.nio.file.Path;
 import org.communityvortex.mcp.FakeSonar;
 
 /** A fake server with one Python quality profile and the real Python analyzer from Maven Central. */
-final class PythonProjectServer {
+public final class PythonProjectServer {
 
-  static final Path ANALYZER = Path.of("target/test-analyzers/sonar-python-plugin.jar");
+  public static final Path ANALYZER = Path.of("target/test-analyzers/sonar-python-plugin.jar");
 
   private PythonProjectServer() {
   }
 
-  static FakeSonar create() {
+  public static FakeSonar create() {
     if (!Files.isRegularFile(ANALYZER)) {
       throw new IllegalStateException("Run through Maven: " + ANALYZER + " is copied in generate-test-resources");
     }

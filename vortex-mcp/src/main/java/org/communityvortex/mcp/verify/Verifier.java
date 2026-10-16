@@ -41,7 +41,14 @@ public final class Verifier {
   private final CodeIndex index;
   private final PolicySource policies;
 
+  private final int maxFiles;
+
   public Verifier(Workspace workspace, Analyzer analyzer, CodeIndex index, PolicySource policies) {
+    this(workspace, analyzer, index, policies, MAX_FILES);
+  }
+
+  public Verifier(Workspace workspace, Analyzer analyzer, CodeIndex index, PolicySource policies, int maxFiles) {
+    this.maxFiles = maxFiles;
     this.workspace = workspace;
     this.analyzer = analyzer;
     this.index = index;
@@ -52,8 +59,8 @@ public final class Verifier {
     if (paths == null || paths.isEmpty()) {
       throw new IllegalArgumentException("paths must list at least one file");
     }
-    if (paths.size() > MAX_FILES) {
-      throw new IllegalArgumentException("at most " + MAX_FILES + " files per call");
+    if (paths.size() > maxFiles) {
+      throw new IllegalArgumentException("at most " + maxFiles + " files per call");
     }
     var files = new ArrayList<Path>(new LinkedHashSet<>(paths.stream().map(workspace::resolveFile).toList()));
     var policy = policies.get();

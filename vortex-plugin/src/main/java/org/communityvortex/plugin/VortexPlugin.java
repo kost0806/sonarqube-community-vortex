@@ -1,5 +1,6 @@
 package org.communityvortex.plugin;
 
+import org.communityvortex.plugin.a3s.A3sCompatibilityFilter;
 import org.communityvortex.plugin.ws.VortexWebService;
 import org.sonar.api.Plugin;
 import org.sonar.api.SonarQubeSide;
@@ -10,7 +11,7 @@ public class VortexPlugin implements Plugin {
   public void define(Context context) {
     context.addExtensions(VortexProperties.definitions());
     if (context.getRuntime().getSonarQubeSide() == SonarQubeSide.SERVER) {
-      context.addExtension(VortexWebService.class);
+      context.addExtensions(VortexWebService.class, A3sCompatibilityFilter.class);
     }
   }
 }

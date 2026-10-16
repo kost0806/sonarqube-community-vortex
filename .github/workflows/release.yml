@@ -67,12 +67,16 @@ jobs:
           mkdir dist
           cp build/vortex-plugin/target/vortex-plugin.jar "dist/community-vortex-plugin-$VERSION.jar"
           cp build/vortex-mcp/target/vortex-mcp-all.jar "dist/community-vortex-mcp-$VERSION.jar"
+          cp build/vortex-server/target/vortex-server-all.jar "dist/community-vortex-server-$VERSION.jar"
           {
             echo "== Server plugin (bundled libraries)"
             cat build/vortex-plugin/target/generated-sources/license/THIRD-PARTY.txt
             echo
             echo "== MCP server (bundled libraries)"
             cat build/vortex-mcp/target/generated-sources/license/THIRD-PARTY.txt
+            echo
+            echo "== Analysis service (bundled libraries)"
+            cat build/vortex-server/target/generated-sources/license/THIRD-PARTY.txt
           } > dist/THIRD-PARTY.txt
           (cd dist && sha256sum * > SHA256SUMS)
           cat dist/SHA256SUMS

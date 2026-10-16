@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: docker
+    directory: /vortex-server
+    schedule:
+      interval: weekly
   - package-ecosystem: maven
     directory: /
     schedule:

@@ -106,7 +106,27 @@ public final class PluginCache {
     return target;
   }
 
+  /** Verified (path, size, mtime, md5) combinations, so large jars are hashed once per process. */
+  private static final Set<String> VERIFIED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
   private static boolean md5Matches(Path file, String expected) {
+    String identity;
+    try {
+      identity = file.toAbsolutePath() + "|" + Files.size(file) + "|" + Files.getLastModifiedTime(file).toMillis() + "|" + expected.toLowerCase(java.util.Locale.ROOT);
+    } catch (IOException e) {
+      return false;
+    }
+    if (VERIFIED.contains(identity)) {
+      return true;
+    }
+    var matches = computeMd5Matches(file, expected);
+    if (matches) {
+      VERIFIED.add(identity);
+    }
+    return matches;
+  }
+
+  private static boolean computeMd5Matches(Path file, String expected) {
     try (var in = Files.newInputStream(file)) {
       var digest = MessageDigest.getInstance("MD5");
       var buffer = new byte[64 * 1024];

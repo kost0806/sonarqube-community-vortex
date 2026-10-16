@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import org.communityvortex.plugin.a3s.A3sCompatibilityFilter;
 import org.communityvortex.plugin.ws.VortexWebService;
 import org.junit.jupiter.api.Test;
 import org.sonar.api.Plugin;
@@ -26,8 +27,8 @@ class VortexPluginTest {
 
     new VortexPlugin().define(context);
 
-    assertThat(context.getExtensions()).contains(VortexWebService.class);
-    assertThat(context.getExtensions()).filteredOn(PropertyDefinition.class::isInstance).hasSize(4);
+    assertThat(context.getExtensions()).contains(VortexWebService.class, A3sCompatibilityFilter.class);
+    assertThat(context.getExtensions()).filteredOn(PropertyDefinition.class::isInstance).hasSize(5);
   }
 
   @Test
@@ -36,18 +37,22 @@ class VortexPluginTest {
 
     new VortexPlugin().define(context);
 
-    assertThat(context.getExtensions()).doesNotContain(VortexWebService.class).hasSize(4);
+    assertThat(context.getExtensions()).doesNotContain(VortexWebService.class, A3sCompatibilityFilter.class).hasSize(5);
   }
 
   @Test
   void settingsAreAvailableOnProjects() {
     assertThat(VortexProperties.definitions())
+      .filteredOn(d -> VortexProperties.ALL_KEYS.contains(d.key()))
       .allSatisfy(d -> {
         assertThat(d.category()).isEqualTo("Vortex (Community)");
         assertThat(d.configScopes()).contains(PropertyDefinition.ConfigScope.PROJECT);
       })
       .extracting(PropertyDefinition::key)
       .containsExactlyElementsOf(VortexProperties.ALL_KEYS);
+    assertThat(VortexProperties.definitions()).filteredOn(d -> d.key().equals(VortexProperties.ANALYSIS_URL))
+      .singleElement()
+      .satisfies(d -> assertThat(d.configScopes()).doesNotContain(PropertyDefinition.ConfigScope.PROJECT));
   }
 
   @Test

@@ -13,7 +13,7 @@ import org.communityvortex.mcp.sonar.SonarServer;
 import org.sonar.api.rule.RuleKey;
 
 /** Active rules of the project's quality profiles, fetched once and cached until {@link #invalidate()}. */
-public final class RuleRepository {
+public final class RuleRepository implements RuleSource {
 
   static final int PAGE_SIZE = 500;
   // 'type' is no longer accepted by 26.x (validated against a real server in it/run_it.py); it is read when present
@@ -38,6 +38,7 @@ public final class RuleRepository {
     this.clock = clock;
   }
 
+  @Override
   public synchronized List<ServerActiveRule> forLanguage(String languageKey) {
     return load().getOrDefault(languageKey, List.of());
   }

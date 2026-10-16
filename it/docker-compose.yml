@@ -1,31 +1,52 @@
-# Two throwaway servers for the end-to-end test (it/run_it.py):
+# Throwaway servers for the end-to-end test (it/run_it.py):
 #  - sq-community: SonarQube Community Build 26.10 without branch support
 #  - sq-branch:    SonarQube Community Build 26.5 with mc1arke/sonarqube-community-branch-plugin 26.5.0
 #                  (the newest SonarQube release that plugin supports)
-# Both load the Community Vortex plugin built by `./mvnw package`.
+# Both load the Community Vortex plugin built by `./mvnw package`, and each forwards SonarQube CLI
+# analysis requests (/api/v2/a3s/*) to its own Community Vortex analysis service.
 name: vortex-it
 
-x-common: &common
-  environment:
-    SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
-    SONAR_TELEMETRY_ENABLE: "false"
+x-sonarqube: &sonarqube
+  networks: [it]
+
+x-analysis-service: &analysis-service
+  build: ../vortex-server
+  image: community-vortex-server:it
   networks: [it]
 
 services:
   sq-community:
-    <<: *common
+    <<: *sonarqube
     image: sonarqube:26.10.0.133078-community
     ports: ["127.0.0.1:9001:9000"]
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_TELEMETRY_ENABLE: "false"
+      SONAR_VORTEX_ANALYSIS_URL: http://vortex-community:9100
     volumes:
       - ../vortex-plugin/target/vortex-plugin.jar:/opt/sonarqube/extensions/plugins/vortex-plugin.jar:ro
 
+  vortex-community:
+    <<: *analysis-service
+    environment:
+      SONAR_HOST_URL: http://sq-community:9000
+
   sq-branch:
-    <<: *common
+    <<: *sonarqube
     image: mc1arke/sonarqube-with-community-branch-plugin:26.5.0.122743-community
     ports: ["127.0.0.1:9002:9000"]
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_TELEMETRY_ENABLE: "false"
+      SONAR_VORTEX_ANALYSIS_URL: http://vortex-branch:9100
     volumes:
       # mount the single jar so the image's branch plugin stays in place
       - ../vortex-plugin/target/vortex-plugin.jar:/opt/sonarqube/extensions/plugins/vortex-plugin.jar:ro
+
+  vortex-branch:
+    <<: *analysis-service
+    environment:
+      SONAR_HOST_URL: http://sq-branch:9000
 
 networks:
   it: {}

@@ -47,8 +47,10 @@ jobs:
           path: |
             vortex-plugin/target/vortex-plugin.jar
             vortex-mcp/target/vortex-mcp-all.jar
+            vortex-server/target/vortex-server-all.jar
             vortex-mcp/target/generated-sources/license/THIRD-PARTY.txt
             vortex-plugin/target/generated-sources/license/THIRD-PARTY.txt
+            vortex-server/target/generated-sources/license/THIRD-PARTY.txt
 
   end-to-end:
     name: End-to-end (SonarQube 26.10, 26.5 + branch plugin)
@@ -69,10 +71,21 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: jars
+      - name: Install the official SonarQube CLI (pinned, checksum verified)
+        env:
+          SONAR_CLI_VERSION: "1.10.0.16040"
+        run: |
+          base="https://binaries.sonarsource.com/Distribution/sonarqube-cli/$SONAR_CLI_VERSION/linux/sonarqube-cli-$SONAR_CLI_VERSION-linux-x86-64.bin"
+          curl -fsSL "$base" -o "$RUNNER_TEMP/sonar"
+          expected="$(curl -fsSL "$base.sha256" | cut -c1-64)"
+          echo "$expected  $RUNNER_TEMP/sonar" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/sonar"
+          echo "SONAR_CLI=$RUNNER_TEMP/sonar" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/sonar" --version
       - name: Elasticsearch kernel setting for SonarQube
         run: sudo sysctl -w vm.max_map_count=524288
-      - name: Start SonarQube servers
-        run: docker compose -f it/docker-compose.yml up -d
+      - name: Start SonarQube servers and analysis services
+        run: docker compose -f it/docker-compose.yml up -d --build
       - name: Run end-to-end checks
         run: python -I it/run_it.py
       - name: Server logs on failure

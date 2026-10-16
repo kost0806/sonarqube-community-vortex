@@ -24,7 +24,7 @@ Sonar Vortex의 "Guide and Verify"와 같은 목적을 가지며, 다음 자료�
 | Sonar Vortex 기능 (공개 문서 기준) | Community Vortex | 비고 |
 |---|---|---|
 | Vortex context: 규칙, 아키텍처, 의존성 정책 | `api/vortex/context` (서버 플러그인) + `vortex_get_context`, `vortex_get_rules` (MCP) | 정책은 직접 정의하는 프로젝트 설정입니다 (아래 참고) |
-| Vortex analysis: 에이전트가 작성한 파일을 몇 초 안에 검증 | `vortex_verify_files` (MCP) | `sonarlint-core`로 **서버에 설치된 분석기와 활성 규칙 그대로** 로컬에서 분석하고, 아키텍처·의존성 정책도 함께 검사합니다 |
+| Vortex analysis: 에이전트가 작성한 파일을 몇 초 안에 검증 | `vortex_verify_files` (MCP), **공식 SonarQube CLI** (`sonar analyze`, `sonar analyze agentic`) | `sonarlint-core`로 **서버에 설치된 분석기와 활성 규칙 그대로** 분석하고, 아키텍처·의존성 정책도 함께 검사합니다. [SonarQube CLI](#공식-sonarqube-cli-사용) 참고 |
 | 시맨틱 코드 탐색 | `vortex_search_symbols`, `vortex_file_outline`, `vortex_find_references`, `vortex_get_dependencies` | Java 참조는 JavaParser 심볼 해석으로 처리하고, JS/TS/Python은 구문 수준으로 인덱싱합니다 |
 | Taint 분석 (인젝션) | **제공하지 않음** | 보안 엔진이 상용이라 Community 분석기에 포함되어 있지 않습니다 |
 | 사용량 대시보드 / 과금 | 구현하지 않음 | |
@@ -54,6 +54,7 @@ branch 지원이 있을 때는 다음과 같이 동작합니다.
 |---|---|
 | `community-vortex-plugin-<version>.jar` | SonarQube 서버 플러그인 |
 | `community-vortex-mcp-<version>.jar` | MCP 서버 (의존성 포함, `java -jar`로 실행) |
+| `community-vortex-server-<version>.jar` | SonarQube CLI용 분석 서비스 (의존성 포함, `java -jar`로 실행) |
 | `SHA256SUMS`, `THIRD-PARTY.txt` | 체크섬, 포함된 라이브러리의 라이선스 목록 |
 
 다운로드한 파일과 GitHub 빌드 출처(provenance)를 검증하는 방법:
@@ -135,6 +136,89 @@ claude mcp add --scope local community-vortex \
 SonarQube for IDE가 쓰는 것과 같은 jar). 이후에는 캐시를 재사용합니다. 활성 규칙은 5분마다,
 정책은 1분마다 새로 가져옵니다. 서버의 분석기 버전이 바뀌면 MCP 서버를 재시작해야 합니다.
 
+## 공식 SonarQube CLI 사용
+
+[SonarQube CLI](https://github.com/SonarSource/sonarqube-cli)(LGPL-3.0)는 Vortex 분석 요청을 서버의
+`POST /api/v2/a3s/analyses`로 보냅니다. Community Build에서는 플러그인이 이 엔드포인트를 받아
+**Community Vortex 분석 서비스**로 전달합니다. 분석 서비스는 같은 요청·응답 형식을 독자적으로 구현한
+것입니다.
+
+```
+sonar analyze ──► SonarQube (사용자 인증) ──► 플러그인: /api/v2/a3s/* ──► vortex-server
+                                                                            │ 사용자 권한 확인,
+                                                                            │ 규칙·분석기·정책 조회
+                                            SonarQube Web API ◄─────────────┘ (사용자 본인의 토큰으로)
+```
+
+1. SonarQube 옆에서 분석 서비스를 실행합니다. `vortex-server/Dockerfile`로 이미지를 만들거나,
+   `java -jar community-vortex-server-<version>.jar`로 실행합니다(Java 21 이상).
+
+   | 환경 변수 | 기본값 | 의미 |
+   |---|---|---|
+   | `SONAR_HOST_URL` | 필수 | 분석 서비스에서 접근할 SonarQube 주소. 예: `http://sonarqube:9000` |
+   | `VORTEX_PORT` / `VORTEX_BIND` | `9100` / `0.0.0.0` | 수신 주소. 내부 네트워크에만 두세요 |
+   | `VORTEX_CACHE_DIR` | `~/.vortex-server` | 분석기 캐시와 요청별 임시 파일 |
+   | `VORTEX_NODE` | `PATH`의 `node` | JavaScript/TypeScript 분석용 Node.js (이미지에 포함) |
+   | `VORTEX_MAX_FILES` | `100` | 요청당 파일 수. 큰 변경분은 CLI가 나눠서 보냅니다 |
+
+2. SonarQube에 분석 서비스 주소를 지정하고 재시작합니다. 환경 변수
+   `SONAR_VORTEX_ANALYSIS_URL=http://vortex-server:9100`을 쓰거나, `sonar.properties`에
+   `sonar.vortex.analysis.url`을 설정합니다. SonarQube 앞에 리버스 프록시가 있다면 수 MB 크기의 요청
+   본문을 허용해야 합니다.
+
+```yaml
+services:
+  sonarqube:
+    image: sonarqube:26.10.0.133078-community
+    environment:
+      SONAR_VORTEX_ANALYSIS_URL: http://vortex-server:9100
+    volumes:
+      - ./community-vortex-plugin-<version>.jar:/opt/sonarqube/extensions/plugins/community-vortex-plugin.jar:ro
+  vortex-server:
+    build: ./vortex-server   # 또는 vortex-server/Dockerfile로 만든 이미지
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+```
+
+3. CLI는 평소처럼 사용합니다.
+
+```bash
+sonar auth login --server https://sonarqube.example.com
+sonar analyze --file src/main/java/com/acme/Order.java --project my_project
+sonar analyze --project my_project            # git 변경분
+sonar analyze agentic --staged --project my_project
+```
+
+결과에는 분석기 규칙 키(`java:S106` 등)와 함께, 프로젝트 정책 위반을 나타내는 `vortex:architecture`,
+`vortex:dependency`가 나옵니다. 종료 코드 51은 이슈가 발견됐다는 뜻입니다.
+
+**Claude Code 루프.** `sonar integrate claude`는 서버가 SonarSource의 독점 context 엔진도 제공할 때만
+Vortex 훅을 설치합니다. Community Vortex는 그 엔진을 흉내 내지 않으므로, 대신 함께 제공하는 훅을
+사용합니다. 이 훅은 파일을 수정할 때마다 `sonar analyze`를 실행하고 결과를 Claude에게 돌려줍니다
+(`jq` 필요).
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "/path/to/integrations/claude-code/sonar-analyze-hook.sh" }]
+      }
+    ]
+  }
+}
+```
+
+**제공하지 않는 기능**
+- `sonar context` / Vortex Context: SonarSource의 독점 `sonar-context-augmentation` 엔진입니다.
+  컨텍스트는 위의 MCP 도구를 사용하세요.
+- `sonar analyze dependency-risks`: SCA 기능이며 Enterprise 전용입니다.
+- `sonar remediate`: SonarQube Cloud 전용입니다.
+
+CAG entitlement 엔드포인트에는 응답하지 않습니다. 따라서 CLI는 해당 기능을 실행하다 실패하는 대신
+"사용할 수 없음"으로 안내합니다.
+
 ## 빌드와 테스트
 
 ```bash
@@ -155,10 +239,11 @@ docker compose -f it/docker-compose.yml down -v
 
 이 테스트는 다음을 수행합니다.
 
-1. SonarQube 26.10(branch 지원 없음)과 SonarQube 26.5 + community branch plugin을 띄웁니다.
+1. SonarQube 26.10(branch 지원 없음)과 SonarQube 26.5 + community branch plugin을, 각각의 분석 서비스와 함께 띄웁니다.
 2. `it/sample`을 공식 scanner로 분석합니다(메인 브랜치와 `feature/cart`).
 3. 웹 서비스를 검증합니다.
 4. stdio로 MCP 서버를 구동해 검증합니다. 로컬 검증 결과가 CI 분석 결과와 일치하는지도 확인합니다.
+5. 공식 SonarQube CLI(`SONAR_CLI` 또는 `PATH`의 `sonar`)로 두 서버 모두에서 Vortex 분석을 검증합니다.
 
 ## 릴리스
 
@@ -197,6 +282,11 @@ git tag v0.1.0 && git push origin v0.1.0     # v0.2.0-rc.1 같은 태그는 pre-
 * **권한**: 플러그인의 웹 서비스는 같은 프로세스 안에서 호출을 전달하므로 SonarQube 자체의 권한
   검사가 그대로 적용됩니다. 예상하지 못한 내부 오류는 클라이언트에 그대로 노출하지 않습니다.
 * **stdout**: MCP의 stdout에는 프로토콜만 실리고, 그 밖의 출력은 stderr로 보냅니다.
+* **분석 서비스**: 누구도 신뢰하지 않습니다.
+  - 플러그인이 요청을 전달하기 전에 SonarQube가 호출자를 인증합니다.
+  - 분석 서비스는 호출자 본인의 토큰으로 프로젝트 접근 권한을 다시 확인합니다.
+  - 전달받은 파일 경로를 검증(상대 경로, `..` 금지)한 뒤 요청마다 별도 디렉터리에 쓰고, 처리 후 삭제합니다.
+  - 요청 크기와 파일 수에 상한이 있습니다.
 
 ## 디렉터리 구조
 
@@ -204,6 +294,8 @@ git tag v0.1.0 && git push origin v0.1.0     # v0.2.0-rc.1 같은 태그는 pre-
 vortex-policy/   아키텍처 규칙 DSL과 의존성 정책 (공용)
 vortex-plugin/   SonarQube 서버 플러그인: 설정 + api/vortex/*
 vortex-mcp/      stdio MCP 서버: 컨텍스트, 로컬 검증, 코드 탐색
+vortex-server/   SonarQube CLI 분석 요청에 응답하는 분석 서비스 (+ Dockerfile)
+integrations/    수정 후 SonarQube CLI를 실행하는 Claude Code 훅
 it/              docker-compose + E2E 테스트
 ```
 

@@ -47,13 +47,15 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
   private static final String MODULE_KEY = "vortex-workspace";
   private static final long TIMEOUT_MINUTES = 5;
 
-  private final Workspace workspace;
-  private final PluginCache plugins;
-  private final RuleRepository rules;
+  private final Workspace defaultWorkspace;
+  private final PluginCache defaultPlugins;
+  private final RuleSource defaultRules;
   private final Path workDir;
   private final Optional<NodeLocator.Node> node;
   private final TaskManager taskManager = new TaskManager();
 
+  /** Workspace of the analysis in progress; read by the module file system of the (shared) engine. */
+  private Workspace current;
   private AnalysisScheduler scheduler;
   private LoadedPlugins loadedPlugins;
   private Set<SonarLanguage> loadedLanguages = EnumSet.noneOf(SonarLanguage.class);
@@ -61,16 +63,31 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
   private final Set<SonarLanguage> unavailableLanguages = EnumSet.noneOf(SonarLanguage.class);
   private int engineLoads;
 
-  public LocalAnalyzer(Workspace workspace, PluginCache plugins, RuleRepository rules, Path cacheDir, Path configuredNode) {
-    this.workspace = workspace;
-    this.plugins = plugins;
-    this.rules = rules;
+  /** An analyzer bound to one workspace and project (the MCP server). */
+  public LocalAnalyzer(Workspace workspace, PluginCache plugins, RuleSource rules, Path cacheDir, Path configuredNode) {
+    this.defaultWorkspace = workspace;
+    this.defaultPlugins = plugins;
+    this.defaultRules = rules;
     this.workDir = cacheDir.resolve("work");
     this.node = NodeLocator.locate(configuredNode, System.getenv("PATH"));
   }
 
+  /** A shared engine for many workspaces and projects (the analysis service); use {@link #analyze(Workspace, List, RuleSource, PluginCache)}. */
+  public LocalAnalyzer(Path cacheDir, Path configuredNode) {
+    this(null, null, null, cacheDir, configuredNode);
+  }
+
   @Override
-  public synchronized Report analyze(List<Path> files) {
+  public Report analyze(List<Path> files) {
+    if (defaultWorkspace == null) {
+      throw new IllegalStateException("This analyzer has no default workspace");
+    }
+    return analyze(defaultWorkspace, files, defaultRules, defaultPlugins);
+  }
+
+  /** Analyses {@code files} of {@code workspace} with the given project rules and analyzers. Calls are serialised. */
+  public synchronized Report analyze(Workspace workspace, List<Path> files, RuleSource rules, PluginCache plugins) {
+    current = workspace;
     var warnings = new ArrayList<String>();
     var unsupported = new ArrayList<String>();
     var inputs = new ArrayList<ClientInputFile>();
@@ -85,7 +102,7 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
         inputs.add(new WorkspaceInputFile(file, relative, language));
       }
     }
-    var usableLanguages = ensureEngine(languages, warnings);
+    var usableLanguages = ensureEngine(languages, plugins, warnings);
     var analysable = new ArrayList<ClientInputFile>();
     for (var input : inputs) {
       if (usableLanguages.contains(input.language())) {
@@ -97,11 +114,11 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
     if (analysable.isEmpty()) {
       return new Report(List.of(), unsupported, List.of(), warnings);
     }
-    var activeRules = activeRulesFor(usableLanguages, warnings);
-    return run(analysable, activeRules, unsupported, warnings);
+    var activeRules = activeRulesFor(usableLanguages, rules, warnings);
+    return run(workspace, analysable, activeRules, unsupported, warnings);
   }
 
-  private Report run(List<ClientInputFile> inputs, Map<String, ServerActiveRule> activeRules,
+  private Report run(Workspace workspace, List<ClientInputFile> inputs, Map<String, ServerActiveRule> activeRules,
     List<String> unsupported, List<String> warnings) {
     var config = AnalysisConfiguration.builder()
       .addInputFiles(inputs)
@@ -143,6 +160,8 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
     return new Finding(file,
       range == null ? 0 : range.getStartLine(),
       range == null ? 0 : range.getEndLine(),
+      range == null ? 0 : range.getStartLineOffset(),
+      range == null ? 0 : range.getEndLineOffset(),
       ruleKey,
       rule == null ? null : rule.name(),
       rule == null ? null : rule.severity(),
@@ -151,7 +170,7 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
       !issue.quickFixes().isEmpty());
   }
 
-  private Map<String, ServerActiveRule> activeRulesFor(Set<SonarLanguage> languages, List<String> warnings) {
+  private static Map<String, ServerActiveRule> activeRulesFor(Set<SonarLanguage> languages, RuleSource rules, List<String> warnings) {
     var byKey = new LinkedHashMap<String, ServerActiveRule>();
     for (var language : languages) {
       var languageRules = rules.forLanguage(language.getSonarLanguageKey());
@@ -164,7 +183,7 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
   }
 
   /** Loads analyzers for {@code requested}; returns the languages that can actually be analysed. */
-  private Set<SonarLanguage> ensureEngine(Set<SonarLanguage> requested, List<String> warnings) {
+  private Set<SonarLanguage> ensureEngine(Set<SonarLanguage> requested, PluginCache plugins, List<String> warnings) {
     for (var language : requested) {
       if (unavailableLanguages.contains(language)) {
         warnings.add(noAnalyzer(language));
@@ -226,7 +245,7 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
       .setWorkDir(workDir)
       .setClientPid(ProcessHandle.current().pid())
       .setExtraProperties(Map.of())
-      .setFileSystemProvider(moduleKey -> new WorkspaceFileSystem(workspace))
+      .setFileSystemProvider(moduleKey -> new WorkspaceFileSystem(() -> current))
       .setNodeJs(node.map(NodeLocator.Node::path).orElse(null))
       .build();
     scheduler = new AnalysisScheduler(schedulerConfig, loadedPlugins, new Slf4jLogOutput());
@@ -286,11 +305,12 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
 
   /** Lets cross-file sensors (e.g. tsconfig lookup) see the workspace. */
   private static final class WorkspaceFileSystem implements ClientModuleFileSystem {
-    private final Workspace workspace;
+    private final java.util.function.Supplier<Workspace> workspaces;
     private final Map<Path, ClientInputFile> cache = new HashMap<>();
+    private Workspace cachedFor;
 
-    WorkspaceFileSystem(Workspace workspace) {
-      this.workspace = workspace;
+    WorkspaceFileSystem(java.util.function.Supplier<Workspace> workspaces) {
+      this.workspaces = workspaces;
     }
 
     @Override
@@ -300,6 +320,11 @@ public final class LocalAnalyzer implements Analyzer, AutoCloseable {
 
     @Override
     public synchronized Stream<ClientInputFile> files() {
+      var workspace = workspaces.get();
+      if (workspace != cachedFor) {
+        cache.clear();
+        cachedFor = workspace;
+      }
       var result = new ArrayList<ClientInputFile>();
       for (var path : workspace.files()) {
         result.add(cache.computeIfAbsent(path, p -> new WorkspaceInputFile(p, workspace.relative(p),

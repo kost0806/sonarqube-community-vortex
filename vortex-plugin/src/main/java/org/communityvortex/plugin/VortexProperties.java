@@ -15,6 +15,9 @@ public final class VortexProperties {
 
   public static final List<String> ALL_KEYS = List.of(ARCHITECTURE_RULES, DENIED_DEPENDENCIES, ALLOWED_DEPENDENCIES, GUIDELINES);
 
+  /** Server-level: base URL of the Community Vortex analysis service that answers SonarQube CLI analysis requests. */
+  public static final String ANALYSIS_URL = "sonar.vortex.analysis.url";
+
   static final String CATEGORY = "Vortex (Community)";
   private static final String SUB_CATEGORY_POLICIES = "Agent policies";
 
@@ -63,6 +66,16 @@ public final class VortexProperties {
         .subCategory(SUB_CATEGORY_POLICIES)
         .onConfigScopes(ConfigScope.PROJECT)
         .index(4)
+        .build(),
+      PropertyDefinition.builder(ANALYSIS_URL)
+        .name("Analysis service URL")
+        .description("Base URL of the Community Vortex analysis service (vortex-server), e.g. <code>http://vortex-server:9100</code>. "
+          + "When set, SonarQube CLI analysis requests (<code>sonar analyze</code>) are answered by that service. "
+          + "Read at startup: set it in <code>sonar.properties</code> or as <code>SONAR_VORTEX_ANALYSIS_URL</code>.")
+        .type(PropertyType.STRING)
+        .category(CATEGORY)
+        .subCategory("Analysis service")
+        .index(5)
         .build());
   }
 }

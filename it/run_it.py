@@ -315,6 +315,83 @@ def check_mcp(server: Server, token: str, workspace: Path) -> None:
     check("verify does not pass", report.get("passed") is False, report.get("passed"))
 
 
+def sonar_cli() -> str | None:
+    """The official SonarQube CLI: $SONAR_CLI, `sonar` on PATH, or the Windows install location."""
+    if os.environ.get("SONAR_CLI"):
+        return os.environ["SONAR_CLI"]
+    on_path = shutil.which("sonar")
+    if on_path:
+        return on_path
+    windows = Path(os.environ.get("LOCALAPPDATA", "")) / "sonarqube-cli" / "bin" / "sonar.exe"
+    return str(windows) if windows.is_file() else None
+
+
+def cli_issue_rules(cli: str, server: Server, token: str, workspace: Path, file: str, command: list[str]) -> set[str] | None:
+    env = dict(os.environ, SONARQUBE_CLI_SERVER=server.local_url, SONARQUBE_CLI_TOKEN=token)
+    result = subprocess.run([cli, *command, "--file", file, "--project", PROJECT, "--format", "json"],
+                            cwd=workspace, env=env, capture_output=True, text=True, encoding="utf-8", timeout=600)
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        print("  info CLI output:", (result.stdout + result.stderr)[-800:])
+        return None
+    analysis = report.get("agentic", report)
+    if analysis.get("globalError") or analysis.get("failures"):
+        print("  info CLI report:", json.dumps(analysis)[:800])
+    return {issue["rule"] for f in analysis.get("files", []) for issue in f.get("issues", [])}
+
+
+def check_sonarqube_cli(server: Server, token: str, workspace: Path) -> None:
+    """The official SonarQube CLI's Vortex analysis, answered by the plugin + analysis service."""
+    cli = sonar_cli()
+    if cli is None:
+        check("SonarQube CLI available (set SONAR_CLI)", False, "not found")
+        return
+    entitlement_path = "/api/v2/a3s/org-entitlement/00000000-0000-0000-0000-000000000000"
+    status, body = http("GET", server.local_url + entitlement_path, token)
+    check("A3S entitlement answered by the analysis service", status == 200 and body.get("allowed") is True, (status, body))
+    status, _ = http("GET", server.local_url + "/api/v2/cag/cag-entitlement/00000000-0000-0000-0000-000000000000", token)
+    check("CAG (context engine) is honestly reported as not provided", status in (404, 405), status)
+
+    ci = server_issue_rules(server, token)
+    order = "src/main/java/com/acme/domain/Order.java"
+    for command in (["analyze"], ["analyze", "agentic"]):
+        rules = cli_issue_rules(cli, server, token, workspace, order, command)
+        label = "sonar " + " ".join(command)
+        check(f"{label}: Java issues of the project's profile", rules is not None and {"java:S106", "java:S1068"} <= rules, rules)
+        check(f"{label}: architecture violation", rules is not None and "vortex:architecture" in rules, rules)
+        check(f"{label}: analyzer issues match the CI analysis", rules is not None
+              and {r for r in rules if not r.startswith("vortex:")} == ci.get(order, set()),
+              {"cli": sorted(rules or []), "ci": sorted(ci.get(order, set()))})
+    rules = cli_issue_rules(cli, server, token, workspace, "scripts/report.py", ["analyze", "agentic"])
+    check("sonar analyze agentic: Python issue", rules is not None and "python:S1481" in rules, rules)
+    rules = cli_issue_rules(cli, server, token, workspace, "pom.xml", ["analyze", "agentic"])
+    check("sonar analyze agentic: denied dependency", rules == {"vortex:dependency"}, rules)
+
+
+def check_claude_code_hook(server: Server, token: str, workspace: Path) -> None:
+    """integrations/claude-code/sonar-analyze-hook.sh, fed the JSON Claude Code sends after an edit."""
+    bash, jq, cli = shutil.which("bash"), shutil.which("jq"), sonar_cli()
+    if not (bash and jq and cli):
+        print("  info Claude Code hook check skipped (needs bash, jq and the SonarQube CLI)")
+        return
+    hook = ROOT / "integrations" / "claude-code" / "sonar-analyze-hook.sh"
+    env = dict(os.environ, SONARQUBE_CLI_SERVER=server.local_url, SONARQUBE_CLI_TOKEN=token, SONAR_PROJECT_KEY=PROJECT,
+               PATH=str(Path(cli).parent) + os.pathsep + os.environ.get("PATH", ""))
+
+    def run_hook(relative: str) -> subprocess.CompletedProcess:
+        payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(workspace / relative)}})
+        return subprocess.run([bash, str(hook)], input=payload, cwd=workspace, env=env,
+                              capture_output=True, text=True, encoding="utf-8", timeout=600)
+
+    with_issues = run_hook("src/main/java/com/acme/domain/Order.java")
+    check("Claude Code hook hands findings back to Claude (exit 2)",
+          with_issues.returncode == 2 and "java:S106" in with_issues.stderr and "vortex:architecture" in with_issues.stderr,
+          (with_issues.returncode, with_issues.stderr[-500:]))
+    clean = run_hook("src/main/java/com/acme/infra/Db.java")
+    check("Claude Code hook lets clean edits through (exit 0)", clean.returncode == 0, (clean.returncode, clean.stderr[-300:]))
+
+
 def prepare_workspace(base: Path) -> Path:
     workspace = base / "sample"
     shutil.copytree(SAMPLE, workspace)
@@ -338,6 +415,8 @@ def main() -> int:
             # everything an agent does runs with the least-privileged user
             check_plugin(server, agent_token)
             check_mcp(server, agent_token, workspace)
+            check_sonarqube_cli(server, agent_token, workspace)
+            check_claude_code_hook(server, agent_token, workspace)
     print(f"\n{'FAILED: ' + str(len(failures)) + ' check(s)' if failures else 'ALL CHECKS PASSED'}")
     return 1 if failures else 0
 
