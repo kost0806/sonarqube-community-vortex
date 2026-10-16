@@ -1,5 +1,7 @@
 # Community Vortex
 
+**English** | [한국어](README.ko.md)
+
 [![CI](https://github.com/kost0806/sonarqube-community-vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kost0806/sonarqube-community-vortex/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kost0806/sonarqube-community-vortex?include_prereleases)](https://github.com/kost0806/sonarqube-community-vortex/releases)
 [![License: LGPL v3](https://img.shields.io/badge/license-LGPL--3.0-blue)](COPYING.LESSER)
