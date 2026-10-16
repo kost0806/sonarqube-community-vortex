@@ -39,7 +39,7 @@
       SonarQube 26.5 ships plugin API 13.5.0.4319 (the newest release supported by
       mc1arke/sonarqube-community-branch-plugin), 26.10 ships 14.1.0.5543.
     -->
-    <sonar.pluginApi.version>13.5.0.4319</sonar.pluginApi.version>
+    <sonar.pluginApi.version>14.2.0.5584</sonar.pluginApi.version>
     <sonarlint.version>12.1.1.87771</sonarlint.version>
     <mcp.version>2.1.0</mcp.version>
     <javaparser.version>3.28.2</javaparser.version>
