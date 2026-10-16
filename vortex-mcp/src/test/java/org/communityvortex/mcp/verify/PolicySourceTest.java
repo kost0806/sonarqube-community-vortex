@@ -28,6 +28,16 @@ class PolicySourceTest {
   }
 
   @Test
+  void keepsTheRuleLineNumbersOfTheServerSetting() {
+    var policy = new PolicySource(new FakeSonar().reply("api/vortex/policy", """
+      {"policy":{"architectureRules":[{"line":2,"from":"a.**","to":"b.**","text":"deny a.** -> b.**"},
+                                      {"line":5,"from":"c.**","to":"d.**","text":"deny c.** -> d.**"}],
+       "architectureRuleErrors":[],"deniedDependencies":[],"allowedDependencies":[]}}"""), "acme").get();
+
+    assertThat(policy.architectureRules()).extracting(r -> r.line()).containsExactly(2, 5);
+  }
+
+  @Test
   void cachesForOneMinute() {
     var server = new FakeSonar().reply("api/vortex/policy", POLICY);
     var now = new AtomicLong();

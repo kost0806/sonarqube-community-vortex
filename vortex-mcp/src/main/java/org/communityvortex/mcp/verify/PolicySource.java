@@ -7,8 +7,8 @@ import org.communityvortex.mcp.sonar.Params;
 import org.communityvortex.mcp.sonar.SonarServer;
 import org.communityvortex.mcp.sonar.SonarServerException;
 import org.communityvortex.policy.ArchitectureRule;
-import org.communityvortex.policy.ArchitectureRules;
 import org.communityvortex.policy.DependencyPolicy;
+import org.communityvortex.policy.GlobPattern;
 
 /** The project's policies from {@code api/vortex/policy}, cached briefly because verification runs in a loop. */
 public final class PolicySource {
@@ -56,16 +56,25 @@ public final class PolicySource {
   private Policy fetch() {
     try {
       var policy = server.get("api/vortex/policy", Params.of("project", projectKey)).getAsJsonObject("policy");
-      var ruleLines = new ArrayList<String>();
-      policy.getAsJsonArray("architectureRules").forEach(r -> ruleLines.add(r.getAsJsonObject().get("text").getAsString()));
+      // rebuild rules from the server's parse so messages cite the line numbers of the setting itself
+      var rules = new ArrayList<ArchitectureRule>();
       var warnings = new ArrayList<String>();
+      for (var element : policy.getAsJsonArray("architectureRules")) {
+        var rule = element.getAsJsonObject();
+        try {
+          rules.add(new ArchitectureRule(rule.get("line").getAsInt(),
+            GlobPattern.parse(rule.get("from").getAsString()), GlobPattern.parse(rule.get("to").getAsString())));
+        } catch (IllegalArgumentException e) {
+          warnings.add("Architecture rule ignored: " + e.getMessage());
+        }
+      }
       policy.getAsJsonArray("architectureRuleErrors").forEach(e -> warnings.add("Architecture rule ignored: " + e.getAsString()));
       var denied = new ArrayList<String>();
       policy.getAsJsonArray("deniedDependencies").forEach(d -> denied.add(d.getAsString()));
       var allowed = new ArrayList<String>();
       policy.getAsJsonArray("allowedDependencies").forEach(a -> allowed.add(a.getAsString()));
       var guidelines = policy.has("guidelines") && !policy.get("guidelines").isJsonNull() ? policy.get("guidelines").getAsString() : null;
-      return new Policy(ArchitectureRules.parse(String.join("\n", ruleLines)).rules(), DependencyPolicy.of(denied, allowed), guidelines, warnings);
+      return new Policy(rules, DependencyPolicy.of(denied, allowed), guidelines, warnings);
     } catch (SonarServerException e) {
       if (e.status() == 404 && e.getMessage() != null && e.getMessage().contains("Unknown url")) {
         return Policy.unavailable(NOT_INSTALLED);
