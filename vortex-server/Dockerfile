@@ -2,7 +2,7 @@
 #   docker build -t community-vortex-server vortex-server
 FROM node:22.23.2-bookworm-slim AS node
 
-FROM eclipse-temurin:21.0.12_8-jre-noble
+FROM eclipse-temurin:24.0.2_12-jre-noble
 # Node.js for the JavaScript/TypeScript analyzer
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 RUN useradd --system --uid 10001 --home-dir /var/lib/vortex vortex \
