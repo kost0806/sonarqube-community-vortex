@@ -1,6 +1,6 @@
 # Community Vortex analysis service. Build after `./mvnw package`:
 #   docker build -t community-vortex-server vortex-server
-FROM node:22.23.2-bookworm-slim AS node
+FROM node:26.12.0-bookworm-slim AS node
 
 FROM eclipse-temurin:21.0.12_8-jre-noble
 # Node.js for the JavaScript/TypeScript analyzer
